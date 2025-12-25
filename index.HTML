@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>美股投资动态看板</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .up { color: #ef4444; background: #fee2e2; } /* 红色代表盈 */
+        .down { color: #22c55e; background: #f0fdf4; } /* 绿色代表亏 */
+        tr:hover { cursor: pointer; background-color: #f8fafc; }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-4 md:p-8">
+
+    <div class="max-w-6xl mx-auto">
+        <!-- 头部信息 -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                <p class="text-sm text-gray-500">美元:人民币</p>
+                <h2 id="exchangeRate" class="text-2xl font-bold">--</h2>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                <p class="text-sm text-gray-500">美股时间 (NY)</p>
+                <h2 id="nyTime" class="text-lg font-mono">--</h2>
+            </div>
+            <div id="marketStatus" class="flex items-center justify-center rounded-xl font-bold">
+                载入中...
+            </div>
+        </div>
+
+        <!-- 资产汇总卡片 -->
+        <div id="summaryCard" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 bg-orange-50 p-6 rounded-2xl border border-orange-200">
+            <div>
+                <p class="text-xs text-orange-600">总投入 (CNY)</p>
+                <p id="totalBuy" class="text-xl font-bold text-orange-900">--</p>
+            </div>
+            <div>
+                <p class="text-xs text-orange-600">当前资产 (CNY)</p>
+                <p id="totalHeld" class="text-xl font-bold text-orange-900">--</p>
+            </div>
+            <div>
+                <p class="text-xs text-orange-600">资产浮盈亏</p>
+                <p id="totalPL" class="text-xl font-bold">--</p>
+            </div>
+            <div>
+                <p class="text-xs text-orange-600">变幅</p>
+                <p id="totalPct" class="text-xl font-bold">--</p>
+            </div>
+        </div>
+
+        <!-- 股票列表 -->
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="p-4 border-b bg-gray-50 font-bold text-gray-700 flex justify-between">
+                <span>持仓明细 (点击行查看走势)</span>
+                <span class="text-xs font-normal text-gray-400">数据同步于 Google Sheets</span>
+            </div>
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="text-xs uppercase text-gray-400 border-b">
+                        <th class="p-4">代码</th>
+                        <th class="p-4">现价</th>
+                        <th class="p-4">成本</th>
+                        <th class="p-4 text-right">浮盈亏</th>
+                        <th class="p-4 text-right">幅度</th>
+                    </tr>
+                </thead>
+                <tbody id="stockTableBody">
+                    <!-- JS动态填充 -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 历史趋势图容器 (默认隐藏) -->
+        <div id="chartSection" class="mt-8 bg-white p-6 rounded-2xl shadow-lg border-2 border-blue-100 hidden">
+            <div class="flex justify-between items-center mb-4">
+                <h3 id="chartTitle" class="text-lg font-bold text-gray-800">股票历史走势 (30天)</h3>
+                <button onclick="closeChart()" class="text-gray-400 hover:text-gray-600">✕ 关闭</button>
+            </div>
+            <div class="h-64">
+                <canvas id="historyChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'https://script.google.com/macros/s/AKfycbyiu6BR47nZA1T1c0uhqummxVNFIhNix_HZ7_LEJNEMtuW_s9ItEFADTYE_rMyDRmYb0Q/exec'; // 替换为你的部署URL
+        let myChart = null;
+
+        // 初始化加载
+        async function init() {
+            const res = await fetch(`${API_URL}?action=getMain`);
+            const data = await res.json();
+            renderMain(data);
+        }
+
+        function renderMain(data) {
+            document.getElementById('exchangeRate').innerText = '¥ ' + data.exchangeRate;
+            document.getElementById('nyTime').innerText = data.nyTime;
+            
+            const statusBox = document.getElementById('marketStatus');
+            statusBox.innerText = data.marketStatus;
+            statusBox.className = data.marketStatus.includes('已收盘') ? 'bg-gray-200 text-gray-600' : 'bg-green-500 text-white animate-pulse';
+
+            // 汇总卡片
+            document.getElementById('totalBuy').innerText = '¥' + data.summary.buyCNY.toLocaleString();
+            document.getElementById('totalHeld').innerText = '¥' + data.summary.heldCNY.toLocaleString();
+            
+            const plEl = document.getElementById('totalPL');
+            plEl.innerText = (data.summary.plCNY >= 0 ? '+¥' : '-¥') + Math.abs(data.summary.plCNY).toLocaleString();
+            plEl.className = data.summary.plCNY >= 0 ? 'text-xl font-bold text-red-600' : 'text-xl font-bold text-green-600';
+
+            document.getElementById('totalPct').innerText = (data.summary.pctCNY * 100).toFixed(2) + '%';
+            document.getElementById('totalPct').className = plEl.className;
+
+            // 股票列表
+            const tbody = document.getElementById('stockTableBody');
+            tbody.innerHTML = data.stocks.map(s => `
+                <tr onclick="loadHistory('${s.ticker}')" class="border-b transition">
+                    <td class="p-4 font-bold text-blue-600">${s.ticker}</td>
+                    <td class="p-4 font-mono">$${s.price}</td>
+                    <td class="p-4 text-gray-400 text-sm">$${s.buyPrice}</td>
+                    <td class="p-4 text-right font-bold ${s.profit >= 0 ? 'text-red-500' : 'text-green-500'}">
+                        ${s.profit >= 0 ? '+' : ''}${s.profit}
+                    </td>
+                    <td class="p-4 text-right">
+                        <span class="px-2 py-1 rounded text-xs font-bold ${s.profit >= 0 ? 'up' : 'down'}">
+                            ${(s.pct * 100).toFixed(2)}%
+                        </span>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        async function loadHistory(ticker) {
+            document.getElementById('chartSection').classList.remove('hidden');
+            document.getElementById('chartTitle').innerText = `${ticker} 过去30天走势`;
+            document.getElementById('chartSection').scrollIntoView({ behavior: 'smooth' });
+
+            const res = await fetch(`${API_URL}?action=getHistory&ticker=${ticker}`);
+            const history = await res.json();
+
+            const ctx = document.getElementById('historyChart').getContext('2d');
+            if (myChart) myChart.destroy();
+
+            myChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: history.map(h => h.date),
+                    datasets: [{
+                        label: '收盘价',
+                        data: history.map(h => h.price),
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: false }, x: { grid: { display: false } } }
+                }
+            });
+        }
+
+        function closeChart() {
+            document.getElementById('chartSection').classList.add('hidden');
+        }
+
+        init();
+    </script>
+</body>
+</html>
