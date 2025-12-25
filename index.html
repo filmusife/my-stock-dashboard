@@ -9,13 +9,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
-        .up-text { color: #ef4444; } /* 盈：红 */
-        .down-text { color: #22c55e; } /* 亏：绿 */
+        .up-text { color: #ef4444; }
+        .down-text { color: #22c55e; }
         .up-bg { background-color: #fee2e2; color: #ef4444; }
         .down-bg { background-color: #f0fdf4; color: #22c55e; }
         .card-shadow { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.04), 0 4px 6px -2px rgba(0, 0, 0, 0.02); }
         .status-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+        /* 隐藏 TradingView 里的版权链接，让界面更干净 */
+        .tradingview-widget-copyright { display: none !important; }
     </style>
 </head>
 <body class="bg-[#f8fafc] text-slate-800 min-h-screen p-4 md:p-8">
@@ -60,9 +62,9 @@
         </div>
 
         <!-- 股票列表 -->
-        <div class="bg-white rounded-2xl card-shadow border border-slate-100 overflow-hidden">
+        <div class="bg-white rounded-2xl card-shadow border border-slate-100 overflow-hidden mb-8">
             <div class="px-6 py-4 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
-                <h3 class="font-bold text-slate-700 text-lg">持仓明细 <span class="text-sm font-normal text-slate-400 ml-2">(点击查看趋势图)</span></h3>
+                <h3 class="font-bold text-slate-700 text-lg">持仓明细 <span class="text-sm font-normal text-slate-400 ml-2">(点击行查看详情)</span></h3>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-left">
@@ -71,7 +73,7 @@
                             <th class="px-6 py-4">代码</th>
                             <th class="px-6 py-4">现价</th>
                             <th class="px-6 py-4">成本</th>
-                            <th class="px-6 py-4">持有股数</th>
+                            <th class="px-6 py-4 text-center">持有股数</th>
                             <th class="px-6 py-4 text-right">浮盈亏</th>
                             <th class="px-6 py-4 text-right">幅度</th>
                         </tr>
@@ -83,45 +85,61 @@
             </div>
         </div>
 
-        <!-- 图表区域 -->
-        <div id="chartSection" class="mt-8 bg-white p-8 rounded-3xl card-shadow border border-blue-50 hidden transition-all duration-500">
-            <div class="flex justify-between items-center mb-6">
-                <div>
-                    <h3 id="chartTitle" class="text-xl font-bold text-slate-800">趋势分析</h3>
-                    <p class="text-sm text-slate-400">过去 30 个工作日收盘走势</p>
+        <!-- 详情区域 (走势图 + 公司简介) -->
+        <div id="detailSection" class="hidden transition-all duration-500 mb-20">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                <!-- 左侧：走势图 (占 2 栏) -->
+                <div class="lg:col-span-2 bg-white p-6 rounded-3xl card-shadow border border-slate-100">
+                    <div class="flex justify-between items-center mb-6">
+                        <div>
+                            <h3 id="chartTitle" class="text-xl font-bold text-slate-800 tracking-tight">趋势分析</h3>
+                            <p class="text-sm text-slate-400">过去 30 个工作日收盘价格</p>
+                        </div>
+                    </div>
+                    <div class="h-80">
+                        <canvas id="historyChart"></canvas>
+                    </div>
                 </div>
-                <button onclick="closeChart()" class="bg-slate-100 hover:bg-slate-200 text-slate-500 p-2 rounded-full transition">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                </button>
-            </div>
-            <div class="h-80">
-                <canvas id="historyChart"></canvas>
+
+                <!-- 右侧：公司简介 (占 1 栏) -->
+                <div class="lg:col-span-1 bg-white p-6 rounded-3xl card-shadow border border-slate-100 flex flex-col">
+                    <div class="flex items-center space-x-3 mb-6">
+                        <div class="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center text-blue-500 font-bold" id="tickerIcon">?</div>
+                        <h3 class="text-xl font-bold text-slate-800">公司简介</h3>
+                        <button onclick="closeDetail()" class="ml-auto bg-slate-50 hover:bg-slate-100 text-slate-400 p-1.5 rounded-full transition">✕</button>
+                    </div>
+                    
+                    <!-- TradingView 简介组件容器 -->
+                    <div id="tv-profile-container" class="flex-grow overflow-auto min-h-[400px]">
+                        <div id="tv-profile-widget"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
     <script>
+        // 【核心配置】请确保这里的 URL 是正确的
         const API_URL = 'https://script.google.com/macros/s/AKfycbyiu6BR47nZA1T1c0uhqummxVNFIhNix_HZ7_LEJNEMtuW_s9ItEFADTYE_rMyDRmYb0Q/exec'; 
+        
         let myChart = null;
 
-        // 1. 汇率 & 2. 时间与市场状态逻辑
+        // 更新纽约时间及市场状态
         function updateTimeAndMarket() {
             const now = new Date();
-            // 获取纽约时间
             const nyString = now.toLocaleString("en-US", {timeZone: "America/New_York"});
             const nyTime = new Date(nyString);
             
             const hours = nyTime.getHours();
             const mins = nyTime.getMinutes();
-            const day = nyTime.getDay(); // 0是周日，6是周六
+            const day = nyTime.getDay(); 
 
-            // 格式化显示时间
             document.getElementById('nyTime').innerText = nyTime.toLocaleTimeString('en-GB', { hour12: false });
 
             const statusDot = document.getElementById('statusDot');
             const statusText = document.getElementById('statusText');
             
-            // 判断交易时间：周一到周五，09:30 - 16:00
             const isWeekday = day >= 1 && day <= 5;
             const isTradingHours = (hours > 9 || (hours === 9 && mins >= 30)) && hours < 16;
 
@@ -138,7 +156,7 @@
 
         async function init() {
             updateTimeAndMarket();
-            setInterval(updateTimeAndMarket, 1000); // 秒级更新时间
+            setInterval(updateTimeAndMarket, 1000);
 
             try {
                 const res = await fetch(`${API_URL}?action=getMain`);
@@ -148,10 +166,8 @@
         }
 
         function renderMain(data) {
-            // 1. 汇率精确到4位
             document.getElementById('exchangeRate').innerText = parseFloat(data.exchangeRate).toFixed(4);
 
-            // 资产汇总
             document.getElementById('totalBuy').innerText = '¥' + data.summary.buyCNY.toLocaleString(undefined, {minimumFractionDigits: 2});
             document.getElementById('totalHeld').innerText = '¥' + data.summary.heldCNY.toLocaleString(undefined, {minimumFractionDigits: 2});
             
@@ -164,14 +180,13 @@
             pctEl.innerText = (data.summary.pctCNY * 100).toFixed(2) + '%';
             pctEl.className = pl >= 0 ? 'text-xl font-bold text-red-600' : 'text-xl font-bold text-green-600';
 
-            // 股票列表
             const tbody = document.getElementById('stockTableBody');
             tbody.innerHTML = data.stocks.map(s => {
-                const profit = parseFloat(s.profit); // 解决浮点数精度问题
+                const profit = parseFloat(s.profit);
                 return `
-                <tr onclick="loadHistory('${s.ticker}')" class="group hover:bg-slate-50/80 transition-all cursor-pointer">
+                <tr onclick="loadHistory('${s.ticker}')" class="group hover:bg-slate-50 transition-all cursor-pointer">
                     <td class="px-6 py-5 font-bold text-blue-600 tracking-tight">${s.ticker}</td>
-                    <td class="px-6 py-5 font-mono text-slate-600">$${parseFloat(s.price).toFixed(2)}</td>
+                    <td class="px-6 py-5 font-mono text-slate-600 font-semibold">$${parseFloat(s.price).toFixed(2)}</td>
                     <td class="px-6 py-5 font-mono text-slate-400 text-sm">$${parseFloat(s.buyPrice).toFixed(2)}</td>
                     <td class="px-6 py-5 font-mono text-slate-600 text-center">${s.shares}</td>
                     <td class="px-6 py-5 text-right font-mono font-bold ${profit >= 0 ? 'text-red-500' : 'text-green-500'}">
@@ -186,152 +201,99 @@
             `}).join('');
         }
 
-// 全局变量，用于存储当前查看的股票
-let currentTicker = '';
+        async function loadHistory(ticker) {
+            // 显示详情面板
+            const detailSection = document.getElementById('detailSection');
+            detailSection.classList.remove('hidden');
+            document.getElementById('chartTitle').innerText = `${ticker} 趋势分析`;
+            document.getElementById('tickerIcon').innerText = ticker.split(':').pop().substring(0,1);
 
-async function loadHistory(ticker) {
-    currentTicker = ticker;
-    const detailSection = document.getElementById('detailSection');
-    detailSection.classList.remove('hidden');
-    document.getElementById('chartTitle').innerText = `${ticker} 历史趋势`;
-    
-    // 显示公司 Logo (利用 Clearbit API，免费且无需 Key)
-    const pureTicker = ticker.split(':').pop(); // 去掉 NYSE: 前缀
-    const logoImg = document.getElementById('companyLogo');
-    logoImg.src = `https://logo.clearbit.com/${pureTicker}.com`; 
-    // 注意：有些公司域名不是 .com，如果没搜到会触发 onerror 隐藏
-    logoImg.style.display = 'block';
+            // 1. 加载图表
+            await fetchAndRenderChart(ticker);
 
-    // 1. 加载图表数据
-    fetchHistoryChart(ticker);
+            // 2. 加载 TradingView 简介
+            loadTradingViewProfile(ticker);
 
-    // 2. 加载 TradingView 公司简介
-    loadTradingViewProfile(ticker);
-
-    // 平滑滚动到详情区
-    setTimeout(() => {
-        window.scrollTo({ top: detailSection.offsetTop - 20, behavior: 'smooth' });
-    }, 100);
-}
-
-// 专门渲染图表的函数
-async function fetchHistoryChart(ticker) {
-    const res = await fetch(`${API_URL}?action=getHistory&ticker=${ticker}`);
-    const history = await res.json();
-    const ctx = document.getElementById('historyChart').getContext('2d');
-    if (myChart) myChart.destroy();
-    myChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: history.map(h => h.date),
-            datasets: [{
-                label: '收盘价',
-                data: history.map(h => h.price),
-                borderColor: '#3b82f6',
-                borderWidth: 3,
-                backgroundColor: 'rgba(59, 130, 246, 0.05)',
-                fill: true,
-                tension: 0.4,
-                pointRadius: 0,
-                pointHoverRadius: 6
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: { intersect: false, mode: 'index' },
-            plugins: { legend: { display: false } },
-            scales: { y: { grid: { color: '#f1f5f9' } }, x: { grid: { display: false } } }
+            // 滚动到视图
+            setTimeout(() => {
+                window.scrollTo({ top: detailSection.offsetTop - 20, behavior: 'smooth' });
+            }, 100);
         }
-    });
-}
 
-// 动态注入 TradingView 简介脚本
-function loadTradingViewProfile(ticker) {
-    const container = document.getElementById('tv-profile-widget');
-    container.innerHTML = ''; // 清空旧内容
-    
-    const script = document.createElement('script');
-    script.src = "https://s3.tradingview.com/external-embedding/embed-widget-symbol-profile.js";
-    script.type = "text/javascript";
-    script.async = true;
-    
-    // 这里的配置决定了简介的外观
-    script.innerHTML = JSON.stringify({
-        "symbol": ticker,
-        "width": "100%",
-        "height": "100%",
-        "colorTheme": "light",
-        "isTransparent": true,
-        "locale": "zh_CN"
-    });
-    
-    container.appendChild(script);
-}
+        async function fetchAndRenderChart(ticker) {
+            try {
+                const res = await fetch(`${API_URL}?action=getHistory&ticker=${ticker}`);
+                const history = await res.json();
+                
+                const ctx = document.getElementById('historyChart').getContext('2d');
+                if (myChart) myChart.destroy();
 
-function closeDetail() {
-    document.getElementById('detailSection').classList.add('hidden');
-}
-
-
-            // 5. 图表高亮与交互增强
-            myChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: history.map(h => h.date),
-                    datasets: [{
-                        label: '收盘价',
-                        data: history.map(h => h.price),
-                        borderColor: '#3b82f6',
-                        borderWidth: 3,
-                        backgroundColor: 'rgba(59, 130, 246, 0.05)',
-                        fill: true,
-                        tension: 0.4,
-                        pointRadius: 0, // 初始不显示点
-                        pointHoverRadius: 6, // 鼠标移上去点变大
-                        pointHoverBackgroundColor: '#3b82f6',
-                        pointHoverBorderColor: '#fff',
-                        pointHoverBorderWidth: 2
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
-                        intersect: false,
-                        mode: 'index',
+                myChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: history.map(h => h.date),
+                        datasets: [{
+                            label: '收盘价',
+                            data: history.map(h => h.price),
+                            borderColor: '#3b82f6',
+                            borderWidth: 3,
+                            backgroundColor: 'rgba(59, 130, 246, 0.05)',
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 0,
+                            pointHoverRadius: 6,
+                            pointHoverBackgroundColor: '#3b82f6',
+                            pointHoverBorderColor: '#fff',
+                            pointHoverBorderWidth: 2
+                        }]
                     },
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                            backgroundColor: '#1e293b',
-                            padding: 12,
-                            titleFont: { size: 14 },
-                            bodyFont: { size: 15, family: 'monospace' },
-                            callbacks: {
-                                label: function(context) {
-                                    return ` 收盘价: $${context.parsed.y.toFixed(2)}`;
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { intersect: false, mode: 'index' },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                backgroundColor: '#1e293b',
+                                padding: 12,
+                                callbacks: {
+                                    label: (context) => ` 收盘价: $${context.parsed.y.toFixed(2)}`
                                 }
                             }
-                        }
-                    },
-                    scales: {
-                        y: { 
-                            grid: { color: '#f1f5f9' },
-                            ticks: { font: { family: 'monospace' } }
                         },
-                        x: { display: true, grid: { display: false } }
+                        scales: {
+                            y: { grid: { color: '#f1f5f9' }, ticks: { font: { family: 'monospace' } } },
+                            x: { grid: { display: false } }
+                        }
                     }
-                }
-            });
+                });
+            } catch (e) { console.error("历史数据加载失败", e); }
         }
 
-        function closeChart() {
-            document.getElementById('chartSection').classList.add('hidden');
+        function loadTradingViewProfile(ticker) {
+            const container = document.getElementById('tv-profile-widget');
+            container.innerHTML = ''; // 清空内容
+            
+            const script = document.createElement('script');
+            script.src = "https://s3.tradingview.com/external-embedding/embed-widget-symbol-profile.js";
+            script.type = "text/javascript";
+            script.async = true;
+            script.innerHTML = JSON.stringify({
+                "symbol": ticker,
+                "width": "100%",
+                "height": "100%",
+                "colorTheme": "light",
+                "isTransparent": true,
+                "locale": "zh_CN"
+            });
+            container.appendChild(script);
+        }
+
+        function closeDetail() {
+            document.getElementById('detailSection').classList.add('hidden');
         }
 
         init();
     </script>
 </body>
 </html>
-
