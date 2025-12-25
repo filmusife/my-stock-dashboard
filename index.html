@@ -16,8 +16,12 @@
         .card-shadow { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.04), 0 4px 6px -2px rgba(0, 0, 0, 0.02); }
         .status-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
-        /* 隐藏 TradingView 里的版权链接，让界面更干净 */
+        /* 隐藏 TradingView 版权信息 */
         .tradingview-widget-copyright { display: none !important; }
+        /* 优化滚动条样式 */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
     </style>
 </head>
 <body class="bg-[#f8fafc] text-slate-800 min-h-screen p-4 md:p-8">
@@ -79,7 +83,7 @@
                         </tr>
                     </thead>
                     <tbody id="stockTableBody" class="divide-y divide-slate-50">
-                        <!-- JS 填充 -->
+                        <!-- 由 JS 填充数据 -->
                     </tbody>
                 </table>
             </div>
@@ -87,17 +91,18 @@
 
         <!-- 详情区域 (走势图 + 公司简介) -->
         <div id="detailSection" class="hidden transition-all duration-500 mb-20">
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
                 
                 <!-- 左侧：走势图 (占 2 栏) -->
                 <div class="lg:col-span-2 bg-white p-6 rounded-3xl card-shadow border border-slate-100">
                     <div class="flex justify-between items-center mb-6">
                         <div>
                             <h3 id="chartTitle" class="text-xl font-bold text-slate-800 tracking-tight">趋势分析</h3>
-                            <p class="text-sm text-slate-400">过去 30 个工作日收盘价格</p>
+                            <p class="text-sm text-slate-400">过去 30 个工作日收盘价格走势</p>
                         </div>
                     </div>
-                    <div class="h-80">
+                    <!-- 走势图高度设为 550px -->
+                    <div class="h-[550px]">
                         <canvas id="historyChart"></canvas>
                     </div>
                 </div>
@@ -110,9 +115,9 @@
                         <button onclick="closeDetail()" class="ml-auto bg-slate-50 hover:bg-slate-100 text-slate-400 p-1.5 rounded-full transition">✕</button>
                     </div>
                     
-                    <!-- TradingView 简介组件容器 -->
-                    <div id="tv-profile-container" class="flex-grow overflow-auto min-h-[800px]">
-                        <div id="tv-profile-widget"></div>
+                    <!-- 简介容器高度设为 650px，去掉 overflow 以免双滚动条 -->
+                    <div id="tv-profile-container" class="h-[650px]">
+                        <div id="tv-profile-widget" class="h-full"></div>
                     </div>
                 </div>
             </div>
@@ -120,12 +125,12 @@
     </div>
 
     <script>
-        // 【核心配置】请确保这里的 URL 是正确的
+        // 请替换为您自己的部署 URL
         const API_URL = 'https://script.google.com/macros/s/AKfycbyiu6BR47nZA1T1c0uhqummxVNFIhNix_HZ7_LEJNEMtuW_s9ItEFADTYE_rMyDRmYb0Q/exec'; 
         
         let myChart = null;
 
-        // 更新纽约时间及市场状态
+        // 1. 汇率 & 2. 时间与市场状态逻辑
         function updateTimeAndMarket() {
             const now = new Date();
             const nyString = now.toLocaleString("en-US", {timeZone: "America/New_York"});
@@ -166,13 +171,16 @@
         }
 
         function renderMain(data) {
+            // 1. 汇率精确到4位
             document.getElementById('exchangeRate').innerText = parseFloat(data.exchangeRate).toFixed(4);
 
+            // 资产汇总
             document.getElementById('totalBuy').innerText = '¥' + data.summary.buyCNY.toLocaleString(undefined, {minimumFractionDigits: 2});
             document.getElementById('totalHeld').innerText = '¥' + data.summary.heldCNY.toLocaleString(undefined, {minimumFractionDigits: 2});
             
             const pl = parseFloat(data.summary.plCNY);
             const plEl = document.getElementById('totalPL');
+            // 4. 浮盈亏显示小数点后3位并加美金符号 (此处显示为人民币汇总，如需美金符号请确保数据源正确)
             plEl.innerText = (pl >= 0 ? '+¥' : '-¥') + Math.abs(pl).toLocaleString(undefined, {minimumFractionDigits: 3});
             plEl.className = pl >= 0 ? 'text-xl font-bold text-red-600' : 'text-xl font-bold text-green-600';
 
@@ -180,6 +188,7 @@
             pctEl.innerText = (data.summary.pctCNY * 100).toFixed(2) + '%';
             pctEl.className = pl >= 0 ? 'text-xl font-bold text-red-600' : 'text-xl font-bold text-green-600';
 
+            // 股票列表
             const tbody = document.getElementById('stockTableBody');
             tbody.innerHTML = data.stocks.map(s => {
                 const profit = parseFloat(s.profit);
@@ -202,7 +211,6 @@
         }
 
         async function loadHistory(ticker) {
-            // 显示详情面板
             const detailSection = document.getElementById('detailSection');
             detailSection.classList.remove('hidden');
             document.getElementById('chartTitle').innerText = `${ticker} 趋势分析`;
@@ -214,7 +222,7 @@
             // 2. 加载 TradingView 简介
             loadTradingViewProfile(ticker);
 
-            // 滚动到视图
+            // 平滑滚动
             setTimeout(() => {
                 window.scrollTo({ top: detailSection.offsetTop - 20, behavior: 'smooth' });
             }, 100);
@@ -240,8 +248,8 @@
                             backgroundColor: 'rgba(59, 130, 246, 0.05)',
                             fill: true,
                             tension: 0.4,
-                            pointRadius: 0,
-                            pointHoverRadius: 6,
+                            pointRadius: 0, 
+                            pointHoverRadius: 6, // 鼠标移动到点上时高亮显示
                             pointHoverBackgroundColor: '#3b82f6',
                             pointHoverBorderColor: '#fff',
                             pointHoverBorderWidth: 2
@@ -250,29 +258,37 @@
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
-                        interaction: { intersect: false, mode: 'index' },
+                        interaction: {
+                            intersect: false,
+                            mode: 'index', // 鼠标靠近时自动捕捉最近的点
+                        },
                         plugins: {
                             legend: { display: false },
                             tooltip: {
                                 backgroundColor: '#1e293b',
                                 padding: 12,
+                                titleFont: { size: 14 },
+                                bodyFont: { size: 15, family: 'monospace' },
                                 callbacks: {
                                     label: (context) => ` 收盘价: $${context.parsed.y.toFixed(2)}`
                                 }
                             }
                         },
                         scales: {
-                            y: { grid: { color: '#f1f5f9' }, ticks: { font: { family: 'monospace' } } },
+                            y: { 
+                                grid: { color: '#f1f5f9' },
+                                ticks: { font: { family: 'monospace' } }
+                            },
                             x: { grid: { display: false } }
                         }
                     }
                 });
-            } catch (e) { console.error("历史数据加载失败", e); }
+            } catch (e) { console.error("加载历史数据失败", e); }
         }
 
         function loadTradingViewProfile(ticker) {
             const container = document.getElementById('tv-profile-widget');
-            container.innerHTML = ''; // 清空内容
+            container.innerHTML = ''; 
             
             const script = document.createElement('script');
             script.src = "https://s3.tradingview.com/external-embedding/embed-widget-symbol-profile.js";
@@ -281,7 +297,7 @@
             script.innerHTML = JSON.stringify({
                 "symbol": ticker,
                 "width": "100%",
-                "height": "100%",
+                "height": 650, // 强制设置高度为 650px 以减少滚动
                 "colorTheme": "light",
                 "isTransparent": true,
                 "locale": "zh_CN"
@@ -297,4 +313,3 @@
     </script>
 </body>
 </html>
-
