@@ -186,19 +186,93 @@
             `}).join('');
         }
 
-        async function loadHistory(ticker) {
-            const chartSection = document.getElementById('chartSection');
-            chartSection.classList.remove('hidden');
-            document.getElementById('chartTitle').innerText = `${ticker} 历史趋势`;
-            
-            // 平滑滚动
-            window.scrollTo({ top: chartSection.offsetTop + 100, behavior: 'smooth' });
+// 全局变量，用于存储当前查看的股票
+let currentTicker = '';
 
-            const res = await fetch(`${API_URL}?action=getHistory&ticker=${ticker}`);
-            const history = await res.json();
+async function loadHistory(ticker) {
+    currentTicker = ticker;
+    const detailSection = document.getElementById('detailSection');
+    detailSection.classList.remove('hidden');
+    document.getElementById('chartTitle').innerText = `${ticker} 历史趋势`;
+    
+    // 显示公司 Logo (利用 Clearbit API，免费且无需 Key)
+    const pureTicker = ticker.split(':').pop(); // 去掉 NYSE: 前缀
+    const logoImg = document.getElementById('companyLogo');
+    logoImg.src = `https://logo.clearbit.com/${pureTicker}.com`; 
+    // 注意：有些公司域名不是 .com，如果没搜到会触发 onerror 隐藏
+    logoImg.style.display = 'block';
 
-            const ctx = document.getElementById('historyChart').getContext('2d');
-            if (myChart) myChart.destroy();
+    // 1. 加载图表数据
+    fetchHistoryChart(ticker);
+
+    // 2. 加载 TradingView 公司简介
+    loadTradingViewProfile(ticker);
+
+    // 平滑滚动到详情区
+    setTimeout(() => {
+        window.scrollTo({ top: detailSection.offsetTop - 20, behavior: 'smooth' });
+    }, 100);
+}
+
+// 专门渲染图表的函数
+async function fetchHistoryChart(ticker) {
+    const res = await fetch(`${API_URL}?action=getHistory&ticker=${ticker}`);
+    const history = await res.json();
+    const ctx = document.getElementById('historyChart').getContext('2d');
+    if (myChart) myChart.destroy();
+    myChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: history.map(h => h.date),
+            datasets: [{
+                label: '收盘价',
+                data: history.map(h => h.price),
+                borderColor: '#3b82f6',
+                borderWidth: 3,
+                backgroundColor: 'rgba(59, 130, 246, 0.05)',
+                fill: true,
+                tension: 0.4,
+                pointRadius: 0,
+                pointHoverRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { intersect: false, mode: 'index' },
+            plugins: { legend: { display: false } },
+            scales: { y: { grid: { color: '#f1f5f9' } }, x: { grid: { display: false } } }
+        }
+    });
+}
+
+// 动态注入 TradingView 简介脚本
+function loadTradingViewProfile(ticker) {
+    const container = document.getElementById('tv-profile-widget');
+    container.innerHTML = ''; // 清空旧内容
+    
+    const script = document.createElement('script');
+    script.src = "https://s3.tradingview.com/external-embedding/embed-widget-symbol-profile.js";
+    script.type = "text/javascript";
+    script.async = true;
+    
+    // 这里的配置决定了简介的外观
+    script.innerHTML = JSON.stringify({
+        "symbol": ticker,
+        "width": "100%",
+        "height": "100%",
+        "colorTheme": "light",
+        "isTransparent": true,
+        "locale": "zh_CN"
+    });
+    
+    container.appendChild(script);
+}
+
+function closeDetail() {
+    document.getElementById('detailSection').classList.add('hidden');
+}
+
 
             // 5. 图表高亮与交互增强
             myChart = new Chart(ctx, {
@@ -260,3 +334,4 @@
     </script>
 </body>
 </html>
+
