@@ -27,6 +27,20 @@
 <body class="bg-[#f8fafc] text-slate-800 min-h-screen p-4 md:p-8">
 
     <div class="max-w-6xl mx-auto">
+        
+        <!-- 【新增】顶部数据刷新时间栏 -->
+        <div class="flex justify-end mb-4 px-2">
+            <div class="flex items-center space-x-2 bg-slate-100/50 px-3 py-1 rounded-full border border-slate-200/50">
+                <span class="relative flex h-2 w-2">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                </span>
+                <p class="text-[11px] font-medium text-slate-500 tracking-wide">
+                    数据源最后刷新：<span id="lastUpdateTime" class="text-slate-700 font-mono">--</span>
+                </p>
+            </div>
+        </div>
+
         <!-- 顶部状态栏 -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div class="bg-white p-6 rounded-2xl card-shadow border border-slate-100">
@@ -112,7 +126,6 @@
                         <button onclick="closeDetail()" class="ml-auto bg-slate-50 hover:bg-slate-100 text-slate-400 p-1.5 rounded-full transition">✕</button>
                     </div>
                     
-                    <!-- 核心修复：直接硬编码容器高度，移除 flex-grow -->
                     <div id="tv-profile-container" class="w-full">
                         <div id="tv-profile-widget" style="height: 650px; width: 100%;"></div>
                     </div>
@@ -162,6 +175,10 @@
         }
 
         function renderMain(data) {
+            // 【关键修改】显示来自 A1 单元格的刷新时间
+            // 假设你的 GAS 后端返回的 JSON 对象里有一个 key 叫 lastUpdate
+            document.getElementById('lastUpdateTime').innerText = data.lastUpdate || '暂无时间数据';
+
             document.getElementById('exchangeRate').innerText = parseFloat(data.exchangeRate).toFixed(4);
             document.getElementById('totalBuy').innerText = '¥' + data.summary.buyCNY.toLocaleString(undefined, {minimumFractionDigits: 2});
             document.getElementById('totalHeld').innerText = '¥' + data.summary.heldCNY.toLocaleString(undefined, {minimumFractionDigits: 2});
@@ -197,19 +214,16 @@
         }
 
         async function loadHistory(ticker) {
-            // 1. 【核心修复】先显示容器，再加载插件
             const detailSection = document.getElementById('detailSection');
             detailSection.classList.remove('hidden');
             
             document.getElementById('chartTitle').innerText = `${ticker} 趋势分析`;
             document.getElementById('tickerIcon').innerText = ticker.split(':').pop().substring(0,1);
 
-            // 2. 滚动视图
             setTimeout(() => {
                 window.scrollTo({ top: detailSection.offsetTop - 20, behavior: 'smooth' });
             }, 50);
 
-            // 3. 加载数据和插件
             fetchAndRenderChart(ticker);
             loadTradingViewProfile(ticker);
         }
@@ -261,7 +275,7 @@
             script.innerHTML = JSON.stringify({
                 "symbol": ticker,
                 "width": "100%",
-                "height": "100%", // 继承父容器的 650px
+                "height": "100%", 
                 "colorTheme": "light",
                 "isTransparent": true,
                 "locale": "zh_CN"
