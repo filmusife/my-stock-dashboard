@@ -3,22 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>我的美股投资看板</title>
+    <title>我的美股投资看板 - 缓存加速版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
-        .up-text { color: #ef4444; } /* 盈：红 */
-        .down-text { color: #22c55e; } /* 亏：绿 */
+        .up-text { color: #ef4444; } 
+        .down-text { color: #22c55e; } 
         .up-bg { background-color: #fee2e2; color: #ef4444; }
         .down-bg { background-color: #f0fdf4; color: #22c55e; }
         .card-shadow { box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.04), 0 4px 6px -2px rgba(0, 0, 0, 0.02); }
         .status-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
-        /* 隐藏 TradingView 版权信息 */
         .tradingview-widget-copyright { display: none !important; }
-        /* 滚动条美化 */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #f1f5f9; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
@@ -28,7 +26,7 @@
 
     <div class="max-w-6xl mx-auto">
         
-        <!-- 【新增】顶部数据刷新时间栏 -->
+        <!-- 顶部数据刷新时间栏 -->
         <div class="flex justify-end mb-4 px-2">
             <div class="flex items-center space-x-2 bg-slate-100/50 px-3 py-1 rounded-full border border-slate-200/50">
                 <span class="relative flex h-2 w-2">
@@ -36,7 +34,7 @@
                     <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
                 </span>
                 <p class="text-[11px] font-medium text-slate-500 tracking-wide">
-                    数据源最后刷新：<span id="lastUpdateTime" class="text-slate-700 font-mono">--</span>
+                    数据包最后生成时间：<span id="lastUpdateTime" class="text-slate-700 font-mono">--</span>
                 </p>
             </div>
         </div>
@@ -101,11 +99,9 @@
             </div>
         </div>
 
-        <!-- 详情区域 (走势图 + 公司简介) -->
+        <!-- 详情区域 -->
         <div id="detailSection" class="hidden transition-all duration-500 mb-20">
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-                
-                <!-- 左侧：走势图 (占 2 栏) -->
                 <div class="lg:col-span-2 bg-white p-6 rounded-3xl card-shadow border border-slate-100">
                     <div class="flex justify-between items-center mb-6">
                         <div>
@@ -118,14 +114,12 @@
                     </div>
                 </div>
 
-                <!-- 右侧：公司简介 (占 1 栏) -->
                 <div class="lg:col-span-1 bg-white p-6 rounded-3xl card-shadow border border-slate-100">
                     <div class="flex items-center space-x-3 mb-6">
                         <div class="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center text-blue-500 font-bold" id="tickerIcon">?</div>
                         <h3 class="text-xl font-bold text-slate-800">公司简介</h3>
                         <button onclick="closeDetail()" class="ml-auto bg-slate-50 hover:bg-slate-100 text-slate-400 p-1.5 rounded-full transition">✕</button>
                     </div>
-                    
                     <div id="tv-profile-container" class="w-full">
                         <div id="tv-profile-widget" style="height: 650px; width: 100%;"></div>
                     </div>
@@ -135,9 +129,13 @@
     </div>
 
     <script>
-        const API_URL = 'https://script.google.com/macros/s/AKfycbyiu6BR47nZA1T1c0uhqummxVNFIhNix_HZ7_LEJNEMtuW_s9ItEFADTYE_rMyDRmYb0Q/exec'; 
+        // 请确保此处的 URL 是你最新部署的 GAS 地址
+        const API_URL = 'https://script.google.com/macros/s/你的脚本ID/exec'; 
+        
+        let allData = null; // 全局变量，存储从 API 获取的所有数据包
         let myChart = null;
 
+        // 实时时钟和市场状态逻辑
         function updateTimeAndMarket() {
             const now = new Date();
             const nyString = now.toLocaleString("en-US", {timeZone: "America/New_York"});
@@ -164,22 +162,32 @@
             }
         }
 
+        // 初始化：只请求一次 API
         async function init() {
             updateTimeAndMarket();
             setInterval(updateTimeAndMarket, 1000);
             try {
-                const res = await fetch(`${API_URL}?action=getMain`);
-                const data = await res.json();
-                renderMain(data);
-            } catch (e) { console.error("数据加载失败", e); }
+                // 这里的请求不再带 action 参数，因为后端直接返回缓存好的 JSON
+                const res = await fetch(API_URL);
+                allData = await res.json();
+                
+                if (allData.error) {
+                    alert("错误: " + allData.error);
+                    return;
+                }
+                
+                renderMain(allData);
+            } catch (e) { 
+                console.error("数据加载失败", e);
+                document.getElementById('lastUpdateTime').innerText = '加载失败，请检查 API';
+            }
         }
 
+        // 渲染主界面（汇总数据和表格）
         function renderMain(data) {
-            // 【关键修改】显示来自 A1 单元格的刷新时间
-            // 假设你的 GAS 后端返回的 JSON 对象里有一个 key 叫 lastUpdate
             document.getElementById('lastUpdateTime').innerText = data.lastUpdate || '暂无时间数据';
-
             document.getElementById('exchangeRate').innerText = parseFloat(data.exchangeRate).toFixed(4);
+            
             document.getElementById('totalBuy').innerText = '¥' + data.summary.buyCNY.toLocaleString(undefined, {minimumFractionDigits: 2});
             document.getElementById('totalHeld').innerText = '¥' + data.summary.heldCNY.toLocaleString(undefined, {minimumFractionDigits: 2});
             
@@ -213,55 +221,64 @@
             `}).join('');
         }
 
-        async function loadHistory(ticker) {
+        // 修改后的 loadHistory：直接从本地 allData 变量拿历史数据
+        function loadHistory(ticker) {
             const detailSection = document.getElementById('detailSection');
             detailSection.classList.remove('hidden');
             
             document.getElementById('chartTitle').innerText = `${ticker} 趋势分析`;
             document.getElementById('tickerIcon').innerText = ticker.split(':').pop().substring(0,1);
 
+            // 滚动到详情区
             setTimeout(() => {
                 window.scrollTo({ top: detailSection.offsetTop - 20, behavior: 'smooth' });
             }, 50);
 
-            fetchAndRenderChart(ticker);
+            // 1. 渲染图表：直接从缓存的 historyMap 中提取
+            const history = allData.historyMap[ticker] || [];
+            renderChart(history);
+            
+            // 2. 加载 TradingView 简介
             loadTradingViewProfile(ticker);
         }
 
-        async function fetchAndRenderChart(ticker) {
-            try {
-                const res = await fetch(`${API_URL}?action=getHistory&ticker=${ticker}`);
-                const history = await res.json();
-                const ctx = document.getElementById('historyChart').getContext('2d');
-                if (myChart) myChart.destroy();
-                myChart = new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: history.map(h => h.date),
-                        datasets: [{
-                            label: '收盘价',
-                            data: history.map(h => h.price),
-                            borderColor: '#3b82f6',
-                            borderWidth: 3,
-                            backgroundColor: 'rgba(59, 130, 246, 0.05)',
-                            fill: true,
-                            tension: 0.4,
-                            pointRadius: 0,
-                            pointHoverRadius: 6
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        interaction: { intersect: false, mode: 'index' },
-                        plugins: { legend: { display: false } },
-                        scales: {
-                            y: { grid: { color: '#f1f5f9' }, ticks: { font: { family: 'monospace' } } },
-                            x: { grid: { display: false } }
-                        }
+        // 纯绘图逻辑
+        function renderChart(history) {
+            const ctx = document.getElementById('historyChart').getContext('2d');
+            if (myChart) myChart.destroy();
+            
+            if (history.length === 0) {
+                console.warn("无历史数据可显示");
+                return;
+            }
+
+            myChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: history.map(h => h.date),
+                    datasets: [{
+                        label: '收盘价',
+                        data: history.map(h => h.price),
+                        borderColor: '#3b82f6',
+                        borderWidth: 3,
+                        backgroundColor: 'rgba(59, 130, 246, 0.05)',
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 0,
+                        pointHoverRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { intersect: false, mode: 'index' },
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { grid: { color: '#f1f5f9' }, ticks: { font: { family: 'monospace' } } },
+                        x: { grid: { display: false } }
                     }
-                });
-            } catch (e) { console.error("加载历史数据失败", e); }
+                }
+            });
         }
 
         function loadTradingViewProfile(ticker) {
